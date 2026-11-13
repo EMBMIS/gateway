@@ -1,8 +1,8 @@
 /**
- * Demo: Protect an AI agent with SAG in 30 seconds
+ * Demo: Protect an AI agent with EMBMIS Gateway in 30 seconds
  *
  * Run:   node sdk/demo.js
- * Needs: docker-compose up (SAG running on localhost:3000)
+ * Needs: docker-compose up (EMBMIS Gateway running on localhost:3000)
  */
 const sag = require('./')({
     agent: 'FinanceAgent-7',
@@ -19,7 +19,7 @@ const sag = require('./')({
 
 async function main() {
     console.log('\n  ╔═══════════════════════════════════════════╗');
-    console.log('  ║   SAG SDK Demo — AI Agent Guardrails       ║');
+    console.log('  ║   EMBMIS Gateway SDK demo                  ║');
     console.log('  ║   Agent: FinanceAgent-7                    ║');
     console.log('  ╚═══════════════════════════════════════════╝\n');
 
@@ -60,7 +60,7 @@ async function main() {
 main().catch(err => {
     console.error('\n  ✖ Error:', err.message);
     if (err.code === 'NETWORK_ERROR') {
-        console.error('  Is SAG running? Try: docker-compose up\n');
+        console.error('  Is EMBMIS Gateway running? Try: docker-compose up\n');
     }
     process.exit(1);
 });

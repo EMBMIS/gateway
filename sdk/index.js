@@ -28,20 +28,20 @@ function getArgDepth(obj, currentDepth = 0) {
 }
 
 /**
- * Create a SAG client.
+ * Create an EMBMIS Gateway client.
  *
  * @param {Object} config
- * @param {string} config.agent     - Agent name (must be registered in SAG)
+ * @param {string} config.agent     - Agent name (must be registered in EMBMIS Gateway)
  * @param {string} config.key       - Agent API key
- * @param {string} [config.endpoint] - SAG Gateway URL (default: http://localhost:3000)
+ * @param {string} [config.endpoint] - EMBMIS Gateway URL (default: http://localhost:3000)
  * @param {number} [config.timeout]  - Request timeout in ms (default: 5000)
- * @param {boolean} [config.failOpen] - If true, allow on SAG unreachable (default: false)
+ * @param {boolean} [config.failOpen] - If true, allow when the gateway is unreachable (default: false)
  * @param {Function} [config.onDecision] - Callback fired on every decision
  * @returns {SAGClient}
  */
 function createClient(config) {
     if (!config || !config.agent || !config.key) {
-        throw new Error('@sag/node: "agent" and "key" are required. Get these from your SAG dashboard.');
+        throw new Error('@sag/node: "agent" and "key" are required. Get these from your EMBMIS Gateway console.');
     }
 
     const endpoint = (config.endpoint || DEFAULT_ENDPOINT).replace(/\/$/, '');
@@ -58,7 +58,7 @@ function createClient(config) {
     let circuitOpenUntil = 0;
 
     /**
-     * Execute a tool call through the SAG enforcement layer.
+     * Execute a tool call through the EMBMIS Gateway enforcement layer.
      *
      * @param {string} tool    - Tool identifier (e.g. 'payment.initiate', 'db.query')
      * @param {Object} [args]  - Tool arguments / payload
@@ -153,7 +153,7 @@ function createClient(config) {
                     status: 'FAIL_OPEN',
                     tool,
                     action,
-                    reason: 'SAG unreachable or circuit open — fail-open policy applied',
+                    reason: 'EMBMIS Gateway unreachable or circuit open — fail-open policy applied',
                     raw: null,
                     traceId
                 };
@@ -161,7 +161,7 @@ function createClient(config) {
                 return failResult;
             }
             throw new SAGError(
-                `SAG unreachable at ${endpoint}. Set failOpen:true to allow on outage.`,
+                `EMBMIS Gateway unreachable at ${endpoint}. Set failOpen:true to allow on outage.`,
                 lastError.message === 'Circuit breaker is OPEN' ? 'CIRCUIT_OPEN' : 'NETWORK_ERROR',
                 { tool, action, cause: lastError.message }
             );
@@ -262,7 +262,7 @@ function createClient(config) {
 }
 
 /**
- * Custom error class for SAG failures.
+ * Custom error class for EMBMIS Gateway failures.
  */
 class SAGError extends Error {
     constructor(message, code, context) {

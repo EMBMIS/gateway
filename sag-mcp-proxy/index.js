@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * sag-mcp-proxy — SAG MCP Proxy Server
+ * sag-mcp-proxy — EMBMIS Gateway MCP proxy server
  *
  * Intercepts every MCP tools/call JSON-RPC request and runs it through
- * the SAG gateway before forwarding to the real upstream MCP server.
+ * EMBMIS Gateway before forwarding to the real upstream MCP server.
  *
  * Usage:
  *   const { SAGMCPProxy } = require('sag-mcp-proxy');
@@ -25,8 +25,8 @@ class SAGMCPProxy {
     /**
      * @param {Object} opts
      * @param {string} opts.upstream        - Upstream MCP server base URL
-     * @param {string} opts.sagApiKey       - SAG Bearer API key
-     * @param {string} [opts.sagGatewayUrl] - SAG gateway base URL (default: http://localhost:3000)
+     * @param {string} opts.sagApiKey       - EMBMIS Gateway agent API key (Bearer)
+     * @param {string} [opts.sagGatewayUrl] - EMBMIS Gateway base URL (default: http://localhost:3000)
      * @param {number} [opts.port]          - Port to listen on (default: 3001)
      */
     constructor({ upstream, sagApiKey, sagGatewayUrl = 'http://localhost:3000', port = 3001 }) {
@@ -50,7 +50,7 @@ class SAGMCPProxy {
 
         this._server = http.createServer((req, res) => {
             this._handleRequest(req, res).catch(err => {
-                console.error('[SAG-MCP] Unhandled error:', err.message);
+                console.error('[gateway-mcp] Unhandled error:', err.message);
                 if (!res.headersSent) {
                     res.writeHead(500, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal proxy error' }, id: null }));
@@ -59,7 +59,7 @@ class SAGMCPProxy {
         });
 
         this._server.listen(this.port, () => {
-            console.log(`[SAG-MCP] Proxy listening on :${this.port} → upstream ${this.upstream}`);
+            console.log(`[gateway-mcp] Proxy listening on :${this.port} → upstream ${this.upstream}`);
         });
 
         return this._server;
@@ -112,18 +112,18 @@ class SAGMCPProxy {
         try {
             sagDecision = await this._checkWithSAG(tool, args);
         } catch (err) {
-            console.error(`[SAG-MCP] Gateway check failed for tool=${tool}:`, err.message);
+            console.error(`[gateway-mcp] Gateway check failed for tool=${tool}:`, err.message);
             // Fail-closed: deny on gateway error
             return {
                 jsonrpc: '2.0',
-                error: { code: -32603, message: 'SAG: gateway unreachable — request denied for safety', data: { tool } },
+                error: { code: -32603, message: 'EMBMIS Gateway: unreachable — request denied for safety', data: { tool } },
                 id,
             };
         }
 
         const latency  = Date.now() - start;
         const decision = sagDecision.decision || sagDecision.status || 'UNKNOWN';
-        console.log(`[SAG-MCP] tool=${tool} decision=${decision} latency=${latency}ms`);
+        console.log(`[gateway-mcp] tool=${tool} decision=${decision} latency=${latency}ms`);
 
         // APPROVED (200)
         if (sagDecision.allowed !== false && !['DENIED', 'deny'].includes(decision)) {
@@ -132,7 +132,7 @@ class SAGMCPProxy {
                     jsonrpc: '2.0',
                     error: {
                         code:    -32601,
-                        message: 'SAG: escalated for human review',
+                        message: 'EMBMIS Gateway: escalated for human review',
                         data:    { decision, traceId: sagDecision.traceId || sagDecision.trace_id },
                     },
                     id,
@@ -147,7 +147,7 @@ class SAGMCPProxy {
             jsonrpc: '2.0',
             error: {
                 code:    -32600,
-                message: 'SAG: tool call denied',
+                message: 'EMBMIS Gateway: tool call denied',
                 data:    { decision, reason: sagDecision.reason || sagDecision.message },
             },
             id,
@@ -186,13 +186,13 @@ class SAGMCPProxy {
                         else body.allowed = body.allowed !== false;
                         resolve(body);
                     } catch(e) {
-                        reject(new Error('Invalid JSON from SAG gateway'));
+                        reject(new Error('Invalid JSON from EMBMIS Gateway'));
                     }
                 });
             });
 
             req.on('error', reject);
-            req.setTimeout(5000, () => { req.destroy(new Error('SAG gateway timeout')); });
+            req.setTimeout(5000, () => { req.destroy(new Error('EMBMIS Gateway timeout')); });
             req.write(payload);
             req.end();
         });
