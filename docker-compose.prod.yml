@@ -1,0 +1,146 @@
+# EMBMIS Gateway: production, behind a reverse proxy (Caddy; see DEPLOY.md and deploy/Caddyfile.example).
+#
+# gateway  API + console (port 3000, loopback only)
+# worker   enclave worker for the execute path (gRPC + mTLS, internal network only). Decide-only platforms such as
+#          Business OS do not use it, but the gateway expects one for /api/gateway/execute.
+# redis    shared nonce store: replay protection (requires a password)
+# postgres OPTIONAL, profile "enterprise-db": the demo database the execute-path workers protect. The gateway's own
+#          store is SQLite on the `gateway_data` volume.
+#
+# NO SECRETS IN ANY IMAGE. Keys come from three directories you generate with `npm run keys:prod` and mount read-only;
+# everything else from the environment file:
+#
+#   cp deploy/env.production.example .env.production      # fill it in
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Compose refuses to start when a required secret is missing (${VAR:?message}) rather than falling back to a default.
+
+name: embmis-gateway
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+      args:
+        CONSOLE_BASE: ${CONSOLE_BASE:-/}
+    restart: always
+    depends_on:
+      worker: { condition: service_started }
+    ports:
+      - '127.0.0.1:${GATEWAY_PORT:-3000}:3000'
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      APP_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:3000}
+      # The path the gateway is served under; the proxy forwards it untouched and the gateway drops it. Empty = root.
+      SAG_BASE_PATH: ${SAG_BASE_PATH:-}
+      # Keys and policy: mounted, never built in.
+      SAG_SECRETS_DIR: /run/secrets/sag
+      SAG_BUNDLE_PATH: /run/policy/policy.bundle.json
+      SAG_CRL_PATH: /run/policy/revocation_list.json
+      SAG_DB_PATH: /data/gateway.db
+      # Set SAG_DATABASE_URL to store the gateway's data in PostgreSQL (its own `gateway` schema and role) instead of
+      # SQLite on the gateway_data volume. See DEPLOY.md.
+      SAG_DATABASE_URL: ${SAG_DATABASE_URL:-}
+      SAG_DB_SCHEMA: ${SAG_DB_SCHEMA:-gateway}
+      # `off`: the gateway never runs DDL against PostgreSQL; an administrator applies the schema (DEPLOY.md). `on`: it creates it.
+      SAG_DB_DDL: ${SAG_DB_DDL:-off}
+      SAG_LOG_DIR: /data/logs
+      SAG_MODE: ${SAG_MODE:-enforce}
+      ENCLAVE_ADDRESSES: ${ENCLAVE_ADDRESSES:-worker:50051}
+      SKIP_WORKER_SPAWN: 'true'
+      # Platforms (EMBMIS Business OS) register tenants with a platform key; only its hash is stored here.
+      SAG_PLATFORM_KEY_HASHES: ${SAG_PLATFORM_KEY_HASHES:?Set SAG_PLATFORM_KEY_HASHES (npm run platform-key)}
+      # Console accounts that may change gateway-wide settings.
+      SAG_ADMIN_EMAILS: ${SAG_ADMIN_EMAILS:?Set SAG_ADMIN_EMAILS to the operator email(s)}
+      # Set to false to close console sign-up (operators can still register).
+      SAG_ALLOW_REGISTRATION: ${SAG_ALLOW_REGISTRATION:-true}
+      # Optional.
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      SMTP_URL: ${SMTP_URL:-}
+    volumes:
+      - ${SAG_GATEWAY_SECRETS:?Set SAG_GATEWAY_SECRETS to the gateway-secrets directory from keys:prod}:/run/secrets/sag:ro
+      - ${SAG_POLICY_DIR:?Set SAG_POLICY_DIR to the policy directory from keys:prod}:/run/policy:ro
+      - gateway_data:/data
+    networks: [edge, internal]
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:3000/api/v1/health || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  worker:
+    build: { context: ., dockerfile: Dockerfile.worker }
+    restart: always
+    depends_on:
+      redis: { condition: service_healthy }
+    environment:
+      NODE_ENV: production
+      ENCLAVE_PORT: 50051
+      ENABLE_MTLS: 'true'
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD}@redis:6379
+      SAG_SECRETS_DIR: /run/secrets/sag
+      SAG_BUNDLE_PATH: /run/policy/policy.bundle.json
+      SAG_CRL_PATH: /run/policy/revocation_list.json
+      SAG_LOG_DIR: /data/logs
+      SAG_WATERMARK_PATH: /data/worker_watermark.json
+      # Only used by the execute-path demo tools (profile enterprise-db).
+      PGHOST: ${PGHOST:-postgres}
+      PGUSER: ${POSTGRES_USER:-sag}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-}
+      PGDATABASE: ${POSTGRES_DB:-enterprise_db}
+    volumes:
+      - ${SAG_WORKER_SECRETS:?Set SAG_WORKER_SECRETS to the worker-secrets directory from keys:prod}:/run/secrets/sag:ro
+      - ${SAG_POLICY_DIR}:/run/policy:ro
+      - worker_data:/data
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ['redis-server', '--appendonly', 'yes', '--requirepass', '${REDIS_PASSWORD:?Set REDIS_PASSWORD}']
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+    networks: [internal]
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: ['enterprise-db']
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sag}
+      # Empty by default: the container refuses to start without one, which is the safe failure.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:-enterprise_db}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-sag}']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [internal]
+
+networks:
+  # `edge` is the only one with a published port (loopback). Workers, Redis and Postgres are on `internal`, which
+  # has no route out and no published port.
+  edge:
+  internal:
+    internal: true
+
+volumes:
+  gateway_data:
+  worker_data:
+  redis_data:
+  pg_data:

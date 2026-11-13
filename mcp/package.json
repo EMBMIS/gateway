@@ -1,0 +1,26 @@
+{
+  "name": "@embmis/gateway-mcp",
+  "version": "0.1.0",
+  "description": "An MCP server that puts the EMBMIS Gateway in front of an AI: every tool the AI uses is checked first, and the AI can propose (never apply) policy changes.",
+  "bin": {
+    "embmis-gateway-mcp": "bin/embmis-gateway-mcp.js"
+  },
+  "main": "src/index.js",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node test/mcp.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EMBMIS/gateway.git",
+    "directory": "mcp"
+  },
+  "author": "Rashad Yusubov",
+  "homepage": "https://github.com/EMBMIS/gateway/tree/main/mcp",
+  "bugs": {
+    "url": "https://github.com/EMBMIS/gateway/issues"
+  }
+}

@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package authz;
+
+service EnclaveWorker {
+  // Execute an intent after Gateway pre-filtering
+  rpc ExecuteIntent (ExecutionTicket) returns (ExecutionResult) {}
+
+  // Health check
+  rpc CheckHealth (HealthRequest) returns (HealthResponse) {}
+
+  // Rotate the Ed25519 verification key used to verify Gateway tickets.
+  // The gateway sends its new public key; the enclave atomically swaps
+  // its verification key and invalidates the old one.
+  rpc RotateKeys (RotateKeysRequest) returns (RotateKeysResponse) {}
+}
+
+// The signed ticket proposed by the Gateway
+message ExecutionTicket {
+  string ticket_id = 1;
+  string tool = 2;
+  string action = 3;
+  string args_json = 4; // Canonical JSON string of arguments
+  string agent_id = 5;
+  string agent_role = 6;
+  bytes policy_bundle_hash = 7;
+  double risk_score = 8;
+  string nonce = 9;
+  int64 issued_at = 10;
+  int64 expires_at = 11;
+  bytes signature = 12; // Ed25519 signature
+  string trace_id = 13; // Distributed tracing identifier
+  string span_id = 14;
+  string parent_span_id = 15;
+}
+
+// ─── Shared Response Types ───
+
+message ExecutionResult {
+  string ticket_id = 1;
+  bool success = 2;
+  string error_code = 3; // e.g., "POLICY_VERSION_MISMATCH", "DENIED_BY_WORKER_POLICY"
+  string error_message = 4;
+  string result_json = 5; // The outcome of the tool execution
+  EnclaveAttestation enclave = 6;
+  bytes signature = 7; // HMAC-SHA256 signature calculated over fields 1-6
+  string trace_id = 8;
+  string span_id = 9;
+  string parent_span_id = 10;
+}
+
+message EnclaveAttestation {
+  string session_id = 1;
+  string type = 2;
+  string attestation = 3;
+  bool attestation_valid = 4;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  string active_bundle_hash = 2;
+  int32 pending_queue_size = 3;
+  int32 worker_pid = 4;
+}
+
+// ─── Key Rotation ───
+
+message RotateKeysRequest {
+  // DER-encoded Ed25519 public key that the enclave should trust from now on
+  bytes new_gateway_public_key = 1;
+  // ISO-8601 timestamp of when the rotation was initiated
+  string rotated_at = 2;
+}
+
+message RotateKeysResponse {
+  bool success = 1;
+  string rotated_at = 2;
+  // SHA-256 hex fingerprint of the newly installed public key
+  string new_key_fingerprint = 3;
+  string error = 4;
+}

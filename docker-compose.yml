@@ -1,0 +1,105 @@
+version: '3.8'
+
+networks:
+  sag_net:
+    driver: bridge
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    container_name: sag-gateway
+    networks:
+      - sag_net
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - ENCLAVE_ADDRESSES=sag-worker:50051
+      - SKIP_WORKER_SPAWN=true
+      - SAG_SECRETS_DIR=/run/secrets/sag
+      - DB_ADAPTER=${DB_ADAPTER:-sqlite}
+      - DATABASE_URL=${DATABASE_URL:-}
+      - NODE_ENV=${NODE_ENV:-production}
+      - SAG_MODE=${SAG_MODE:-enforce}
+    volumes:
+      - ${SAG_SECRETS_HOST_DIR:-./certs}:/run/secrets/sag:ro
+      - ./policy.bundle.json:/usr/src/app/policy.bundle.json:ro
+      - ./revocation_list.json:/usr/src/app/revocation_list.json:ro
+      - ./logs:/usr/src/app/logs
+      - sag_db:/usr/src/app/data
+    depends_on:
+      worker:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: sag-worker
+    networks:
+      - sag_net
+    environment:
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-sagredis}@sag-redis:6379
+      - ENABLE_MTLS=true
+      - ENCLAVE_PORT=50051
+      - SAG_SECRETS_DIR=/run/secrets/sag
+    volumes:
+      - ${SAG_SECRETS_HOST_DIR:-./certs}:/run/secrets/sag:ro
+      - ./policy.bundle.json:/usr/src/app/policy.bundle.json:ro
+      - ./revocation_list.json:/usr/src/app/revocation_list.json:ro
+      - ./logs:/usr/src/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: sag-redis
+    networks:
+      - sag_net
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-sagredis}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-sagredis}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: sag-postgres
+    networks:
+      - sag_net
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sagpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-sag}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sag}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    profiles:
+      - postgres
+
+volumes:
+  redis_data:
+  pg_data:
+  sag_db:

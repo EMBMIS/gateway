@@ -1,0 +1,22 @@
+# Nothing secret or stateful may enter an image. Keys are mounted/injected at run time.
+node_modules
+npm-debug.log
+.git
+.env
+.env.*
+!.env.example
+secrets
+certs
+.kms-vault
+*.pem
+*.key
+*.db
+*.db-shm
+*.db-wal
+*.sqlite*
+logs
+*.log
+.worker_watermark.json
+policy.bundle.json
+sag-promo.mp4
+*.pdf

@@ -1,0 +1,24 @@
+# EMBMIS Gateway on its own host. Replace gateway.example.com; Caddy obtains and renews the HTTPS certificate itself.
+# /ws carries the live decision feed; Caddy proxies WebSockets without extra configuration.
+gateway.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3000 {
+		flush_interval -1
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}
+
+# Under a path of a shared host instead (set SAG_BASE_PATH=/gateway and CONSOLE_BASE=/gateway/):
+#
+# example.com {
+# 	handle /gateway/* {
+# 		reverse_proxy 127.0.0.1:3000 {
+# 			flush_interval -1
+# 		}
+# 	}
+# 	redir /gateway /gateway/ 301
+# }

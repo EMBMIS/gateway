@@ -1,0 +1,37 @@
+node_modules/
+dist/
+build/
+.DS_Store
+npm-debug.log*
+
+# ── Secrets: never commit. See SECURITY-ROTATION.md ──
+.env
+.env.*
+!.env.example
+secrets/
+certs/
+.kms-vault/
+*.pem
+*.key
+*.p12
+*.pfx
+!console/**/*.pem
+
+# ── Runtime state: databases, logs, watermarks, generated bundles ──
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite*
+logs/
+*.log
+.worker_watermark.json
+policy.bundle.json
+data/
+
+# Public-only fixtures of the leaked keys, used by tests/key-guard.test.js
+!tests/fixtures/leaked/*
+
+# Console UI check output (docs/console-screenshots holds the curated set)
+console/screenshots/
+console/dist/

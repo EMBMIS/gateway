@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  check:
+    name: check (SQLite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm run console:install
+      - run: npm run console:build
+      - run: npm run lint
+      - run: npm test
+
+  check-postgres:
+    name: check (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sag
+          POSTGRES_PASSWORD: sag_ci
+          POSTGRES_DB: sag
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U sag" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm run console:install
+      - run: npm run console:build
+      # The same suites, with the gateway's data in PostgreSQL (each isolated run gets its own schema).
+      - run: npm test
+        env:
+          SAG_DATABASE_URL: postgres://sag:sag_ci@localhost:5432/sag

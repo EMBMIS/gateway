@@ -1,0 +1,6 @@
+{
+  "revoked_keys": [
+    "alias/policy-authority-v0.4",
+    "mock-compromised-key-v1"
+  ]
+}

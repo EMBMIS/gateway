@@ -1,0 +1,47 @@
+# EMBMIS Gateway: API + console. No keys, databases or logs are baked in (see .dockerignore): they are mounted at run time.
+#
+#   docker build -f Dockerfile.gateway -t embmis-gateway .
+
+# 1. The console (React app) -> console/dist
+FROM node:20-alpine AS console
+WORKDIR /build
+COPY console/package*.json ./
+RUN npm ci
+COPY console/ ./
+# The path the console is served under: / on a dedicated host, e.g. /gateway/ under a path of a shared host.
+ARG CONSOLE_BASE=/
+ENV CONSOLE_BASE=$CONSOLE_BASE
+RUN npm run build
+
+# 2. Production dependencies. better-sqlite3 ships prebuilt binaries; the toolchain is here only as a fallback
+#    and does not reach the final image.
+FROM node:20-alpine AS deps
+RUN apk add --no-cache python3 make g++
+WORKDIR /usr/src/app
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+# 3. Runtime
+FROM node:20-alpine
+RUN apk add --no-cache dumb-init
+WORKDIR /usr/src/app
+COPY --from=deps /usr/src/app/node_modules ./node_modules
+COPY package*.json server.js enclave-worker.js revocation_list.json ./
+COPY src ./src
+COPY cli ./cli
+COPY scripts/print-pg-schema.js ./scripts/print-pg-schema.js
+COPY docs/openapi.yaml ./docs/openapi.yaml
+COPY --from=console /build/dist ./console/dist
+
+# Writable state lives on a volume, owned by the unprivileged user; the code itself stays read-only to the process.
+RUN mkdir -p /data/logs && chown -R node:node /data
+USER node
+ENV NODE_ENV=production \
+    PORT=3000 \
+    SAG_DB_PATH=/data/gateway.db \
+    SAG_LOG_DIR=/data/logs
+EXPOSE 3000
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1:3000/api/v1/health || exit 1
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "server.js"]

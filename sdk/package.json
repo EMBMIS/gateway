@@ -1,0 +1,34 @@
+{
+  "name": "@sag/node",
+  "version": "0.1.0",
+  "description": "EMBMIS Gateway — SDK for governed AI agent execution",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "keywords": [
+    "ai",
+    "agents",
+    "security",
+    "governance",
+    "guardrails",
+    "mcp"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EMBMIS/gateway.git",
+    "directory": "sdk"
+  },
+  "author": "Rashad Yusubov",
+  "homepage": "https://github.com/EMBMIS/gateway/tree/main/sdk",
+  "bugs": {
+    "url": "https://github.com/EMBMIS/gateway/issues"
+  }
+}

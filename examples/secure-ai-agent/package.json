@@ -1,0 +1,19 @@
+{
+  "name": "secure-ai-agent-example",
+  "version": "1.0.0",
+  "description": "Secure your AI agent in 5 minutes with SAG",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@sag/node": "file:./sag-node-0.1.0.tgz",
+    "express": "^4.18.0"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EMBMIS/gateway.git",
+    "directory": "examples/secure-ai-agent"
+  }
+}

@@ -1,0 +1,379 @@
+openapi: 3.1.0
+info:
+  title: EMBMIS Gateway v1 API
+  version: 1.0.0
+  summary: Decide-only API for platforms that execute their own tools.
+  description: |
+    EMBMIS Gateway checks every action an AI agent proposes and answers **allow**, **deny** or **escalate**
+    *before* the action runs. The platform keeps executing its own tools; the gateway never executes anything
+    on this API.
+
+    Every call to `/decide` runs the full pipeline (agent authentication, plan limit, financial guard,
+    signed policy bundle plus the tenant's policies, intent analysis, risk and behavioural scoring) and is
+    appended to a hash-chained audit log.
+
+    **Authentication**
+    * Platform key (`Bearer sag_platform_...`) provisions tenants and agents. Create one with `npm run platform-key`.
+    * Agent key (`Bearer sag_agent_...`) is returned once when an agent is created. It identifies the agent and its tenant.
+
+    **Errors** are always `{ "error": "<what failed and what to do>", "code": "<MACHINE_CODE>" }`.
+    A suspended or revoked agent is not an error: `/decide` answers `deny` with code `AGENT_SUSPENDED` / `AGENT_REVOKED`.
+  license: { name: Proprietary, identifier: LicenseRef-EMBMIS }
+servers:
+  - url: https://embmis.com/gateway
+    description: Production
+  - url: http://localhost:3000
+    description: Local development
+tags:
+  - name: Platform
+    description: Provisioning, with a platform key.
+  - name: Decisions
+    description: Checking actions, with an agent key.
+paths:
+  /api/v1/health:
+    get:
+      tags: [Platform]
+      operationId: health
+      summary: Liveness and version
+      security: []
+      responses:
+        '200':
+          description: The gateway is up.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503':
+          description: The gateway is up but its database is not.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+  /api/v1/openapi.yaml:
+    get:
+      tags: [Platform]
+      operationId: openapi
+      summary: This document
+      security: []
+      responses:
+        '200':
+          description: The OpenAPI 3.1 document.
+          content:
+            application/yaml: { schema: { type: string } }
+  /api/v1/tenants/{tenantId}:
+    put:
+      tags: [Platform]
+      operationId: upsertTenant
+      summary: Create a tenant (idempotent)
+      description: |
+        Creates the tenant and its workspace the first time, and seeds the default ERP policies:
+        reads allow; `delete_*` deny; ledger, journal, payment and approve tools escalate; amounts of 10,000 or more
+        escalate; `export_*` of personal data escalate. Calling it again returns the same `projectId` with `created: false`.
+      security: [{ platformKey: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 200, examples: [Acme Ltd] }
+      responses:
+        '201':
+          description: Tenant created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+        '200':
+          description: Tenant already existed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/tenants/{tenantId}/agents:
+    post:
+      tags: [Platform]
+      operationId: createAgent
+      summary: Create an agent and its key
+      description: |
+        The key is shown only once. If the agent already exists the answer is `409 AGENT_EXISTS`, unless
+        `?rotate=true`, which returns a new key and revokes the old one.
+      security: [{ platformKey: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: rotate
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, role]
+              properties:
+                name: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9 _.:-]{0,63}$', examples: [simeli] }
+                role: { type: string, minLength: 1, maxLength: 64, examples: [erp-operator] }
+      responses:
+        '201':
+          description: Agent created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentWithKey' }
+        '200':
+          description: Key rotated (`?rotate=true`); the previous key no longer works.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentWithKey' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/v1/decide:
+    post:
+      tags: [Decisions]
+      operationId: decide
+      summary: Ask whether an action may run
+      description: |
+        Nothing is executed. The answer is the decision plus everything needed to explain it. Escalations stay
+        open until `/decisions/{traceId}/resolve` records the person's answer.
+      security: [{ agentKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecideRequest' }
+            examples:
+              payment:
+                value:
+                  agentName: simeli
+                  tool: create_payment
+                  action: PAYMENT
+                  args: { supplier: Northwind, reference: INV-1042 }
+                  resource: { kind: payment, module: finance, classification: financial }
+                  context: { tenantId: acme, userId: u_81, amount: 25000, currency: EUR }
+      responses:
+        '200':
+          description: The decision (allow, deny or escalate).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Decision' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /api/v1/decisions/{traceId}/resolve:
+    post:
+      tags: [Decisions]
+      operationId: resolveDecision
+      summary: Record a person's answer to an escalation
+      description: Appended to the audit chain. Only escalated decisions of the caller's tenant can be resolved, once.
+      security: [{ agentKey: [] }]
+      parameters:
+        - name: traceId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome, by]
+              properties:
+                outcome: { type: string, enum: [approved, rejected] }
+                by: { type: string, description: Who decided (name or user id)., maxLength: 200 }
+                reason: { type: [string, 'null'], maxLength: 2000 }
+      responses:
+        '200':
+          description: Recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Resolution' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/v1/policies:
+    get:
+      tags: [Policies]
+      operationId: listPolicies
+      summary: Read the tenant's policies (read only)
+      description: Lets an agent see the rules that govern it. There is no agent endpoint that enables, edits or deletes a policy.
+      security: [{ agentKey: [] }]
+      responses:
+        '200': { description: The policies, lowest priority number first. }
+        '401': { $ref: '#/components/responses/Error' }
+  /api/v1/policies/test:
+    post:
+      tags: [Policies]
+      operationId: testPolicies
+      summary: Dry run a request against the tenant's policies
+      description: Says what `/decide` would answer. Writes nothing and logs nothing.
+      security: [{ agentKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [tool], properties: { tool: { type: string }, action: { type: string, enum: [READ, WRITE, PAYMENT] }, args: { type: object }, resource: { type: object }, context: { type: object } } }
+      responses:
+        '200': { description: The decision that would be made, with the matched policy and risk factors. }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /api/v1/policy-proposals:
+    post:
+      tags: [Policies]
+      operationId: proposePolicy
+      summary: Propose a policy (created disabled; a person must enable it)
+      description: |
+        An agent can suggest a rule, never apply one. The policy is stored disabled, marked as proposed by the agent, and
+        recorded in the audit chain. Until a person enables it in the console it has no effect. At most 20 proposals can
+        wait for review at once.
+      security: [{ agentKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, action, conditions]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                priority: { type: integer, minimum: 0, maximum: 10000 }
+                action: { type: string, enum: [allow, deny, escalate, rate_limit] }
+                conditions:
+                  type: array
+                  items: { type: object, required: [field, operator, value], properties: { field: { type: string }, operator: { type: string }, value: { type: string } } }
+      responses:
+        '201': { description: Recorded, disabled, awaiting review. }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    platformKey:
+      type: http
+      scheme: bearer
+      description: Platform key (`sag_platform_...`). The gateway stores only its SHA-256 hash (`SAG_PLATFORM_KEY_HASHES`).
+    agentKey:
+      type: http
+      scheme: bearer
+      description: Agent key (`sag_agent_...`), returned once by the create-agent call.
+  parameters:
+    TenantId:
+      name: tenantId
+      in: path
+      required: true
+      description: The platform's own id for the company.
+      schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,127}$' }
+  responses:
+    Error:
+      description: Error. `code` is stable and machine readable.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error: { type: string }
+        code:
+          type: string
+          examples: [INVALID_REQUEST, INVALID_PLATFORM_KEY, PLATFORM_KEY_NOT_CONFIGURED, INVALID_AGENT_KEY, TENANT_NOT_FOUND, AGENT_EXISTS, TENANT_MISMATCH, DECISION_NOT_FOUND, NOT_ESCALATED, ALREADY_RESOLVED, INVALID_JSON, INTERNAL_ERROR]
+    Health:
+      type: object
+      required: [ok, version, mode]
+      properties:
+        ok: { type: boolean }
+        version: { type: string }
+        mode: { type: string, examples: [enforce] }
+    Tenant:
+      type: object
+      required: [tenantId, projectId, created]
+      properties:
+        tenantId: { type: string }
+        projectId: { type: string }
+        created: { type: boolean }
+    AgentWithKey:
+      type: object
+      required: [agentId, name, role, key]
+      properties:
+        agentId: { type: string }
+        name: { type: string }
+        role: { type: string }
+        key: { type: string, description: Shown only once. }
+        rotated: { type: boolean }
+    DecideRequest:
+      type: object
+      required: [tool, action]
+      properties:
+        agentName: { type: string, description: Who is acting, for the audit trail (an autonomous agent, say). The key decides which agent is authenticated. }
+        tool: { type: string, examples: [create_payment] }
+        action: { type: string, enum: [READ, WRITE, PAYMENT] }
+        args: { type: object, additionalProperties: true }
+        resource:
+          type: object
+          properties:
+            kind: { type: string }
+            module: { type: string }
+            classification: { type: string, description: 'For example personal, financial, internal.' }
+        context:
+          type: object
+          properties:
+            tenantId: { type: string, description: Must match the tenant of the agent key. }
+            userId: { type: string }
+            amount: { type: number, minimum: 0 }
+            currency: { type: string }
+    RiskFactor:
+      type: object
+      properties:
+        factor: { type: string }
+        weight: { type: number }
+        detail: { type: string }
+    Decision:
+      type: object
+      required: [decision, code, reason, traceId, riskScore, riskFactors, matchedPolicy, auditId, latencyMs]
+      properties:
+        decision: { type: string, enum: [allow, deny, escalate] }
+        code:
+          type: string
+          description: Why. For example ALLOWED, POLICY_DENY, BUNDLE_POLICY_DENY, RISK_AUTO_BLOCK, FINANCIAL_THRESHOLD_EXCEEDED, PLAN_LIMIT_EXCEEDED, AGENT_SUSPENDED, AGENT_REVOKED, POLICY_ESCALATE, RISK_ESCALATION.
+        reason: { type: string }
+        traceId: { type: string, format: uuid }
+        riskScore: { type: integer, minimum: 0, maximum: 100 }
+        riskFactors: { type: array, items: { $ref: '#/components/schemas/RiskFactor' } }
+        matchedPolicy:
+          type: [object, 'null']
+          properties:
+            id: { type: string }
+            name: { type: string }
+        auditId: { type: [string, 'null'] }
+        auditHash: { type: [string, 'null'], description: Hash-chain entry hash. }
+        auditSeq: { type: [integer, 'null'] }
+        policyBundleHash: { type: string }
+        intent:
+          type: [object, 'null']
+          properties:
+            score: { type: number }
+            flags: { type: array, items: { type: string } }
+            reasoning: { type: [string, 'null'] }
+            source: { type: [string, 'null'] }
+            skipped: { type: boolean }
+        latencyMs: { type: number }
+    Resolution:
+      type: object
+      properties:
+        traceId: { type: string }
+        outcome: { type: string, enum: [approved, rejected] }
+        by: { type: string }
+        resolvedAt: { type: string, format: date-time }
+        auditId: { type: string }
+        auditHash: { type: string }
+        auditSeq: { type: integer }

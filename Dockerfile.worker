@@ -1,0 +1,25 @@
+# EMBMIS Gateway enclave worker: runs approved actions on the execute path, over gRPC with mutual TLS.
+# Holds only its own keys (mounted). Not needed by platforms that use the decide-only v1 API.
+#
+#   docker build -f Dockerfile.worker -t embmis-gateway-worker .
+FROM node:20-alpine AS deps
+RUN apk add --no-cache python3 make g++
+WORKDIR /usr/src/app
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+FROM node:20-alpine
+RUN apk add --no-cache dumb-init
+WORKDIR /usr/src/app
+COPY --from=deps /usr/src/app/node_modules ./node_modules
+COPY package*.json enclave-worker.js revocation_list.json ./
+COPY src ./src
+RUN mkdir -p /data/logs && chown -R node:node /data
+USER node
+ENV NODE_ENV=production \
+    ENCLAVE_PORT=50051 \
+    SAG_LOG_DIR=/data/logs \
+    SAG_WATERMARK_PATH=/data/worker_watermark.json
+EXPOSE 50051
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "enclave-worker.js"]

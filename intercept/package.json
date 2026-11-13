@@ -1,0 +1,38 @@
+{
+  "name": "sag-intercept",
+  "version": "0.1.0",
+  "description": "Drop-in interceptor for AI SDKs — one import, every AI call is SAGed",
+  "main": "index.js",
+  "keywords": [
+    "ai",
+    "agents",
+    "security",
+    "governance",
+    "openai",
+    "anthropic",
+    "langchain"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "sag-generate-policy": "./bin/generate-policy.js"
+  },
+  "files": [
+    "index.js",
+    "lib/",
+    "bin/",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EMBMIS/gateway.git",
+    "directory": "intercept"
+  },
+  "author": "Rashad Yusubov",
+  "homepage": "https://github.com/EMBMIS/gateway/tree/main/intercept",
+  "bugs": {
+    "url": "https://github.com/EMBMIS/gateway/issues"
+  }
+}
