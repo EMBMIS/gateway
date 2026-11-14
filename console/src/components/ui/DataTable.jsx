@@ -13,6 +13,9 @@ import {
 } from '@heroicons/react/20/solid'
 import { EmptyState, ErrorState, SkeletonRows } from './Feedback'
 
+/** English plural for the nouns tables use: policy → policies, decision → decisions. */
+const pluralOf = (noun) => (/[^aeiou]y$/.test(noun) ? `${noun.slice(0, -1)}ies` : `${noun}s`)
+
 /**
  * DataTable — tables are the product.
  *
@@ -668,11 +671,11 @@ export default function DataTable(props) {
     const filtered = total > 0 && shown === 0
     if (filtered) {
       return emptyFiltered || (
-        <EmptyState compact title={`No ${noun}s match`} description="Nothing in this list matches the search and filters you have set." action={<span className="inline-flex flex-wrap justify-center gap-3"><button type="button" onClick={() => { setQuery(''); setFilters({}) }} className="text-sm font-medium text-fg underline-offset-2 hover:underline">Clear search and filters</button></span>} />
+        <EmptyState compact title={`No ${pluralOf(noun)} match`} description="Nothing in this list matches the search and filters you have set." action={<span className="inline-flex flex-wrap justify-center gap-3"><button type="button" onClick={() => { setQuery(''); setFilters({}) }} className="text-sm font-medium text-fg underline-offset-2 hover:underline">Clear search and filters</button></span>} />
       )
     }
     if (React.isValidElement(empty)) return empty
-    return <EmptyState {...(empty || { title: `No ${noun}s yet` })} />
+    return <EmptyState {...(empty || { title: `No ${pluralOf(noun)} yet` })} />
   })()
 
   const bulkBar = selectable && selected.size > 0 && (
@@ -687,7 +690,7 @@ export default function DataTable(props) {
   const countLine = showCount && !loading && !error && total > 0 && (
     <div className="flex items-center justify-between border-t border-ink-200 px-3 py-2 text-xs text-ink-500" aria-live="polite">
       <span className="tabular-nums">
-        {shown === total ? `${total.toLocaleString()} ${noun}${total === 1 ? '' : 's'}` : `${shown.toLocaleString()} of ${total.toLocaleString()} ${noun}s`}
+        {shown === total ? `${total.toLocaleString()} ${total === 1 ? noun : pluralOf(noun)}` : `${shown.toLocaleString()} of ${total.toLocaleString()} ${pluralOf(noun)}`}
         {pageSize && shown > pageSize && ` · page ${page + 1} of ${Math.ceil(shown / pageSize)}`}
       </span>
       {pageSize && shown > pageSize && (

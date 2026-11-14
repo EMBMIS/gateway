@@ -88,7 +88,6 @@ export default function Audit() {
             <Field label="To"><Input type="date" value={ex.to} onChange={(e) => setEx({ ...ex, to: e.target.value })} /></Field>
           </div>
           <div className="mt-4"><Button icon={ArrowDownTrayIcon} loading={exportBusy} onClick={doExport}>Download</Button></div>
-          <p className="mt-3 text-xs text-ink-500">SOC 2 style export is part of the Growth plan and above.</p>
         </Card>
       </div>
     </>

@@ -21,7 +21,7 @@ export default function Usage() {
 
   return (
     <>
-      <PageHeader title="Usage" description="What this workspace has used this month, against its plan." />
+      <PageHeader title="Usage" description="What this workspace has used this month. Self-hosted workspaces have no limits." />
       {usage.error && <InlineNotice tone="risk" title="Usage could not be loaded" className="mb-4" action={<Button size="sm" onClick={usage.refetch}>Try again</Button>}>{usage.error.message}</InlineNotice>}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Plan" value={PLAN_NAME[planKey] || 'Free'} loading={usage.loading} />
