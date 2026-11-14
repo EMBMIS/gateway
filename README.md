@@ -12,6 +12,14 @@ Every tool call an AI makes — payments, database queries, API calls — is int
 
 ---
 
+## Screenshots
+
+The console, with demo traffic from `scripts/demo-traffic.js`:
+
+![Dashboard: every decision, allowed, blocked or sent to a person](docs/screenshots/dashboard.png)
+![Escalation queue: actions waiting for a person to approve or reject](docs/screenshots/escalation-queue.png)
+![Policies: the rules that decide](docs/screenshots/policies.png)
+
 ## Architecture
 
 ```
